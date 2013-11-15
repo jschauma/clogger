@@ -1,0 +1,74 @@
+CLOGGER(1)		NetBSD General Commands Manual		    CLOGGER(1)
+
+NAME
+     clogger -- log input to campfire
+
+SYNOPSIS
+     clogger [-DVhv] [-c file] -r room [message ...]
+
+DESCRIPTION
+     clogger writes input to the specified Campfire room(s).
+
+OPTIONS
+     clogger supports the following options:
+
+     -D	       Run in debug mode.  No messages will actually be sent to Camp-
+	       fire.
+
+     -V	       Print version information and exit.
+
+     -c file   Read configuration from this file.
+
+     -h	       Print a short usage statement and exit.
+
+     -r room   Write the given message to this room.  Can be specified multi-
+	       ple times.
+
+     -v	       Be verbose.  Can be specified multiple times.
+
+     message   The message to send to the given room(s); if not specified,
+	       read input from stdin.
+
+DETAILS
+     clogger writes the given message to the specified Campfire room(s).  It
+     prefixes any messages with the username of the invoking user as well as
+     the (short) hostname on which it is running.  If the input consists of
+     multiple lines, then clogger delivers the input as a "PasteMessage" to
+     the Campfire API.
+
+CONFIGURATION
+     By default, clogger reads its configuration from the file
+     /etc/clogger.conf.	 In this file, you can specify the following key-
+     word=value pairs:
+
+     access_token    The API access token used to authenticate to Campfire.
+
+     campfire_host   The hostname for Campfire API access.
+
+     proxy_url	     The URL of the HTTP proxy to use, if any.
+
+     proxy_user	     The username to authenticate to the HTTP proxy, if any.
+
+     proxy_pass	     The password to authenticate to the HTTP proxy, if any.
+
+EXAMPLES
+     To say "Good news, everybody!" to room 1234:
+
+	   echo "Good news, everybody!" | clogger -r 1234
+
+     To paste the contents of the file 'config.xml' to the rooms 1234 and
+     56789:
+
+	   clogger -r 1234 -r 56789 <config.xml
+
+EXIT STATUS
+     The clogger utility exits 0 on success, and >0 if an error occurs.
+
+SEE ALSO
+     logger(1), https://github.com/37signals/campfire-api
+
+HISTORY
+     clogger was originally written by Jan Schaumann <jschauma@twitter.com> in
+     November 2013.
+
+NetBSD 5.0		       November 14, 2013		    NetBSD 5.0
