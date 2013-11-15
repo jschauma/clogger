@@ -28,6 +28,8 @@ How do I use it?
 ----------------
 Just like logger(1):
 
+```
 echo "Good news, everybody!" | clogger -r 1234
 clogger -r 1234 -r 56789 <config.xml
 clogger -r 1234 $(uptime)
+```
