@@ -1,0 +1,86 @@
+.Dd November 14, 2013
+.Dt CLOGGER 1
+.Os
+.Sh NAME
+.Nm clogger
+.Nd log input to campfire
+.Sh SYNOPSIS
+.Nm
+.Op Fl DVhv
+.Op Fl c Ar file
+.Fl r Ar room
+.Op Ar message ...
+.Sh DESCRIPTION
+.Nm
+writes input to the specified Campfire room(s).
+.Sh OPTIONS
+.Nm
+supports the following options:
+.Bl -tag -width message_
+.It Fl D
+Run in debug mode.
+No messages will actually be sent to Campfire.
+.It Fl V
+Print version information and exit.
+.It Fl c Ar file
+Read configuration from this file.
+.It Fl h
+Print a short usage statement and exit.
+.It Fl r Ar room
+Write the given message to this room.
+Can be specified multiple times.
+.It Fl v
+Be verbose.
+Can be specified multiple times.
+.It message
+The message to send to the given room(s); if not specified, read input
+from stdin.
+.El
+.Sh DETAILS
+.Nm
+writes the given message to the specified Campfire room(s).
+It prefixes any messages with the username of the invoking user as well as
+the (short) hostname on which it is running.
+If the input consists of multiple lines, then
+.Nm
+delivers the input as a "PasteMessage" to the Campfire API.
+.Sh CONFIGURATION
+By default,
+.Nm
+reads its configuration from the file
+.Ar /etc/clogger.conf .
+In this file, you can specify the following keyword=value pairs:
+.Bl -tag -width campfire_host_
+.It access_token
+The API access token used to authenticate to Campfire.
+.It campfire_host
+The hostname for Campfire API access.
+.It proxy_url
+The URL of the HTTP proxy to use, if any.
+.It proxy_user
+The username to authenticate to the HTTP proxy, if any.
+.It proxy_pass
+The password to authenticate to the HTTP proxy, if any.
+.El
+.Sh EXAMPLES
+To say "Good news, everybody!" to room 1234:
+.Bd -literal -offset indent
+echo "Good news, everybody!" | clogger -r 1234
+.Ed
+.Pp
+To paste the contents of the file 'config.xml' to the rooms 1234 and
+56789:
+.Bd -literal -offset indent
+clogger -r 1234 -r 56789 <config.xml
+.Ed
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr logger 1 ,
+.Xr https://github.com/37signals/campfire-api
+.Sh HISTORY
+.Nm
+was originally written by
+.An Jan Schaumann
+.Aq jschauma@twitter.com
+in November 2013.

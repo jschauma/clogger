@@ -1,0 +1,39 @@
+%define name		clogger
+%define release		1
+%define version 	0.1
+%define mybuilddir	${HOME}/redhat/BUILD/%{name}-%{version}-root
+
+Requires:		python27
+BuildRoot:		%{mybuilddir}
+Summary:		log input to campfire
+License: 		BSD
+Name: 			%{name}
+Version: 		%{version}
+Release: 		%{release}
+Source: 		%{name}-%{version}.tar.gz
+Prefix: 		/usr
+Group: 			Development/Tools
+
+%description
+'clogger' writes input to the specified Campfire room(s).
+
+%prep
+%setup -q
+
+%build
+mkdir -p %{mybuilddir}/usr/bin
+mkdir -p %{mybuilddir}/usr/libexec
+mkdir -p %{mybuilddir}/usr/share/man/man1
+
+%install
+install -c -m 755 src/clogger %{mybuilddir}/usr/libexec/clogger
+install -c -m 4755 ./wrapper %{mybuilddir}/usr/bin/clogger
+install -c -m 444 doc/clogger.1 %{mybuilddir}/usr/share/man/man1/clogger.1
+
+%files
+%defattr(0444,root,root)
+%attr(4755,campfire-logger,campfire-logger) /usr/bin/clogger
+%attr(0755,root,root) /usr/libexec/clogger
+%doc /usr/share/man/man1/clogger.1.gz
+
+%changelog

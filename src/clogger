@@ -1,0 +1,309 @@
+#! /usr/bin/env python2.7
+#
+# clogger writes data from stdin to the specified Campfire rooms
+#
+# Copyright (c) 2013, Twitter, Inc. All rights reserved.
+#
+# Originally written by Jan Schaumann <jschauma@twitter.com> in November
+# 2013.
+
+import BaseHTTPServer
+import base64
+import getopt
+import httplib
+import json
+import os
+import pwd
+import re
+import socket
+import ssl
+import sys
+
+VERSION = "0.1"
+AGENT_STRING = "clogger " + VERSION
+
+DEFAULTS = {
+    "access_token"  : "",
+    "campfire_host" : "",
+    "config"        : "/etc/clogger.conf",
+    "debug"         : False,
+    "force"         : False,
+    "proxy_url"     : "",
+    "proxy_user"    : "",
+    "proxy_pass"    : "",
+    "rooms"         : []
+}
+
+EXIT_FAILURE = 1
+EXIT_SUCCESS = 0
+
+###
+### Classes
+###
+
+class Clogger(object):
+
+    def __init__(self):
+        """Construct a Clogger with default values."""
+        self.config = DEFAULTS
+        self.message = []
+        self.verbosity = 0
+
+
+    class Usage(Exception):
+        """A simple exception that provides a usage statement and a return
+        code."""
+
+        def __init__(self, rval):
+            self.err = rval
+            self.msg = 'Usage: %s [-DVhv] [-c file] -r room\n' % os.path.basename(sys.argv[0])
+            self.msg += '\t-D       enable debugging mode\n'
+            self.msg += '\t-V       print version information and exit\n'
+            self.msg += '\t-c file  read configuration from this file\n'
+            self.msg += '\t-h       print this message and exit\n'
+            self.msg += '\t-r room  write message to this room\n'
+            self.msg += '\t-v       increase verbosity\n'
+
+
+    def clog(self):
+        """Read data from stdin and write it to the Campfire rooms."""
+        self.verbose("Ready to clog...")
+
+        messageType = "TextMessage"
+
+        if not self.message:
+            # Implicit limitation: we read all content in at once.  This is
+            # reasonable, because we normally only spit out short messages.
+            # If we're being given more input than we can keep in memory,
+            # let's just barf and abort.  GIGO.
+            self.message = sys.stdin.readlines()
+
+        msglen = len(self.message)
+        if msglen > 1:
+            self.makeCampfireRequest(messageType, self.getUserAtHost() + " says:")
+            self.verbose("Setting type to 'PasteMessage' for message length %d..." % msglen, 2)
+            messageType = "PasteMessage"
+            self.message = "".join(self.message)
+        else:
+            self.message = self.getUserAtHost() + ": " + self.message[0].rstrip()
+
+        self.makeCampfireRequest(messageType, self.message)
+
+
+    def getUserAtHost(self):
+        """Create a string representing the username of the real-UID of
+           this process @ the hostname component of the FQDN."""
+
+        uid = os.getuid()
+        try:
+            uinfo = pwd.getpwuid(uid)
+        except KeyError, e:
+            sys.stderr.write("Unable to get struct passwd for uid %d: %s\n" % (uid, e.strerror))
+            sys.exit(EXIT_FAILURE)
+
+        return "%s@%s" % (uinfo.pw_name, socket.gethostname().split(".")[0])
+
+
+    def makeCampfireRequest(self, messageType, message):
+        """Issue the request to send the data to Campfire."""
+
+        self.verbose("Making '%s' request to Campfire..." % messageType, 2)
+        self.verbose("Message:\n%s" % message, 3)
+
+        data = { "message" : { "type" : messageType, "body" : message } }
+
+        for room in self.config["rooms"]:
+            self.verbose("Sending message to room %s..." % room, 3)
+            url = "/room/" + room + "/speak.json"
+            if not self.postData(url, data):
+                sys.stderr.write("Unable to post message to room %s.\n" % room)
+
+
+    def makeProxySocket(self):
+        """Create a fake SSL socket to the proxy.  Based on
+           http://code.activestate.com/recipes/301740-simplest-useful-https-with-basic-proxy-authenticat/
+        """
+
+        (proxy_host, proxy_port) = self.config["proxy_url"].split(":", 2)
+        proxy_port = int(proxy_port)
+        self.verbose("Creating a Proxy socket to %s:%d..." % (proxy_host, proxy_port), 3)
+
+        proxy_connect = "CONNECT %s:443 HTTP/1.0\r\n" % self.config["campfire_host"]
+        proxy_auth_header = ""
+
+        if self.config["proxy_user"] and self.config["proxy_pass"]:
+            proxy_auth = base64.encodestring("%s:%s" % (self.config["proxy_user"],
+                                              self.config["proxy_pass"])).replace('\n', '')
+            proxy_auth_header = "Proxy-authorization: Basic %s\r\n" % proxy_auth
+        proxy_pieces = proxy_connect + proxy_auth_header + "\r\n"
+
+        proxy = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        proxy.connect((proxy_host, proxy_port))
+        proxy.sendall(proxy_pieces)
+        response = proxy.recv(proxy_port)
+        status = response.split()[1]
+        if status != str(200):
+            sys.stderr.write("Unable to connect to proxy: %s\n" % str(status))
+            return None
+
+        return ssl.wrap_socket(proxy, None, None)
+
+
+    def parseConfigFile(self):
+        """Parse the configuration file and update any settings that were
+        not specified on the command-line."""
+
+        cfg = self.config["config"]
+
+        self.verbose("Parsing config file ('%s')..." % cfg)
+
+        n = 0
+        keyval = re.compile("(?P<key>.+?)\s*=\s*(?P<val>.+)")
+
+        try:
+            f = open(cfg, 'r')
+            for line in f.readlines():
+                n += 1
+                line = re.sub(r'#.*', '', line).strip()
+                if line:
+                    m = keyval.match(line)
+                    if not m:
+                        sys.stderr.write("Ignoring invalid syntax in line %d: '%s'\n" % (n, line))
+                    else:
+                        key = m.group('key').strip()
+                        val = m.group('val').strip()
+                        if self.config.has_key(key):
+                            self.config[key] = val
+                            # Do not leak an actual password onto the
+                            # terminal or into logs.
+                            if key == "access_token":
+                                val = "XXXXXX"
+                            self.verbose("Setting %s to %s..." % (key, val), 2)
+                        else:
+                            sys.stderr.write("Ingoring unknown configuration parameter '%s'.\n" % key)
+            f.close()
+
+        except IOError, e:
+            sys.stderr.write("Unable to read '%s': %s\n" % (cfg, e.strerror))
+            sys.exit(EXIT_FAILURE)
+
+
+    def parseOptions(self, inargs):
+        """Parse given command-line optoins and set appropriate
+        attributes.
+
+        Arguments:
+            inargs -- arguments to parse
+
+        Raises:
+            Usage -- if '-h' or invalid command-line args are given
+        """
+
+        try:
+            opts, args = getopt.getopt(inargs, "DVc:hfr:v")
+        except getopt.GetoptError:
+            raise self.Usage(EXIT_FAILURE)
+
+        for option, argument in opts:
+            if option in ("-D"):
+                self.config["debug"] = True
+            if option in ("-V"):
+                print AGENT_STRING
+                sys.exit(EXIT_SUCCESS)
+                # NOTREACHED
+            if option in ("-c"):
+                self.config["config"] = argument
+            if option in ("-h"):
+                raise self.Usage(EXIT_SUCCESS)
+            if option in ("-f"):
+                self.config["force"] = True
+            if option in ("-r"):
+                self.config["rooms"].append(argument)
+            if option in ("-v"):
+                self.verbosity += 1
+
+        if args:
+            self.message = [ " ".join(args) ]
+
+        if not self.config["rooms"]:
+            sys.stderr.write("No rooms specified.\n")
+            raise self.Usage(EXIT_FAILURE)
+
+
+    def postData(self, uri, data):
+        """Post the given data to the URL."""
+
+        if data:
+            self.verbose("Posting data...", 4)
+            self.verbose(data, 5)
+            data = json.dumps(data).encode()
+
+        auth = base64.encodestring('%s:' % self.config["access_token"]).replace('\n', '')
+        headers = { 'Content-Type'  : 'application/json',
+                    'User-Agent'    : AGENT_STRING,
+                    'Authorization' : 'Basic %s' % auth }
+
+        fullurl = "https://" + self.config["campfire_host"] + uri
+        if not self.config["debug"]:
+            proxy_socket = None
+
+            conn = httplib.HTTPSConnection(self.config["campfire_host"])
+            if self.verbosity > 2:
+                conn.set_debuglevel(1)
+            if self.config["proxy_url"]:
+                proxy_socket = self.makeProxySocket()
+                if not proxy_socket:
+                    return False
+                else:
+                    conn.sock = proxy_socket
+
+            try:
+                conn.request("POST", uri, data, headers)
+                res = conn.getresponse()
+            except httplib.HTTPException, e:
+                sys.stderr.write("Unable to make request at '%s': %s %s\n" % \
+                                (fullurl, e.code, BaseHTTPServer.BaseHTTPRequestHandler.responses[e.code][0]))
+                sys.stderr.write("Data posted:\n%s\n" % data)
+                return False
+
+            conn.close()
+
+            if res.status != 200 and res.status != 201:
+                sys.stderr.write("Unable to post to %s\n" % fullurl)
+                sys.stderr.write("Got: %d %s\n" % (res.status, res.reason))
+                return False
+        return True
+
+
+    def verbose(self, msg, level=1):
+        """Print given message to STDERR if the object's verbosity is >=
+        the given lefel."""
+
+        if (self.verbosity >= level):
+            sys.stderr.write("%s> %s\n" % ('=' * level, msg))
+
+###
+### "Main"
+###
+
+if __name__ == "__main__":
+    try:
+        clogger = Clogger()
+
+        try:
+            clogger.parseOptions(sys.argv[1:])
+        except clogger.Usage, u:
+            if (u.err == EXIT_FAILURE):
+                out = sys.stderr
+            else:
+                out = sys.stdout
+            out.write(u.msg)
+            sys.exit(u.err)
+            # NOTREACHED
+
+        clogger.parseConfigFile()
+        clogger.clog()
+
+    except KeyboardInterrupt:
+        # catch ^C, so we don't get a "confusing" python trace
+        sys.exit(EXIT_FAILURE)
