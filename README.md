@@ -14,8 +14,10 @@ What do I need to run this?
 You want to create a configuration file containing at least the following
 lines:
 
-    access_token = 1a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f7
-    campfire_host = yoursite.campfirenow.com
+```
+access_token = 1a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f7
+campfire_host = yoursite.campfirenow.com
+```
 
 If you are using an HTTP proxy to access the internet, you can also add
 the required url and credentials in that file.
