@@ -1,0 +1,4 @@
+clogger
+=======
+
+a Campfire logger
