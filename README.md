@@ -1,5 +1,5 @@
-Clogger - A Campfire Logger
-===========================
+Clogger - A Chat Logger
+=======================
 clogger(1) implements a simple logging/messaging interface analogous to the
 common logger(1) command.  However, instead of logging messages to
 syslog(3), clogger(1) will write the message to Campfire or HipChat.
