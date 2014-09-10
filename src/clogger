@@ -69,12 +69,13 @@ class Clogger(object):
 
         def __init__(self, rval):
             self.err = rval
-            self.msg = 'Usage: %s [-DVhv] [-c file] -r room\n' % os.path.basename(sys.argv[0])
+            self.msg = 'Usage: %s [-DVhv] [-c file] [-t type] -r room\n' % os.path.basename(sys.argv[0])
             self.msg += '\t-D       enable debugging mode\n'
             self.msg += '\t-V       print version information and exit\n'
             self.msg += '\t-c file  read configuration from this file\n'
             self.msg += '\t-h       print this message and exit\n'
             self.msg += '\t-r room  write message to this room\n'
+            self.msg += '\t-t type  clog the chat system of the given type\n'
             self.msg += '\t-v       increase verbosity\n'
 
 
