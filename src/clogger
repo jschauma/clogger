@@ -1,6 +1,6 @@
 #! /usr/bin/env python2.7
 #
-# clogger writes data from stdin to the specified Campfire rooms
+# clogger writes data from stdin to the specified chat rooms
 #
 # Copyright (c) 2013, Twitter, Inc. All rights reserved.
 #
@@ -10,32 +10,45 @@
 import BaseHTTPServer
 import base64
 import getopt
+import getpass
 import httplib
 import json
 import os
+import platform
 import pwd
 import re
 import socket
 import ssl
+import subprocess
 import sys
+import urllib
 
-VERSION = "0.1"
-AGENT_STRING = "clogger " + VERSION
+NAME = "clogger"
+VERSION = "0.6"
+AGENT_STRING = NAME + " " + VERSION
 
 DEFAULTS = {
-    "access_token"  : "",
-    "campfire_host" : "",
-    "config"        : "/etc/clogger.conf",
-    "debug"         : False,
-    "force"         : False,
-    "proxy_url"     : "",
-    "proxy_user"    : "",
-    "proxy_pass"    : "",
-    "rooms"         : []
+    "access_token"   : "",
+    "campfire_token" : "",
+    "campfire_host"  : "",
+    "chat_type"      : "campfire",
+    "config"         : "/etc/clogger.conf",
+    "hipchat_host"   : "api.hipchat.com",
+    "hipchat_token"  : "",
+    "debug"          : False,
+    "follow"         : False,
+    "proxy_url"      : "",
+    "proxy_user"     : "",
+    "proxy_pass"     : "",
+    "rooms"          : []
 }
+
+SUPPORTED_CHATS = [ "campfire", "hipchat" ]
 
 EXIT_FAILURE = 1
 EXIT_SUCCESS = 0
+
+OSX = platform.system() == "Darwin"
 
 ###
 ### Classes
@@ -65,11 +78,33 @@ class Clogger(object):
             self.msg += '\t-v       increase verbosity\n'
 
 
-    def clog(self):
-        """Read data from stdin and write it to the Campfire rooms."""
-        self.verbose("Ready to clog...")
+    def checkConfig(self):
+        """Verify that the configuration we have is sane."""
 
-        messageType = "TextMessage"
+        chat = self.config["chat_type"].lower()
+        if not chat:
+            sys.stderr.write("No chat_type defined!\n")
+            sys.exit(EXIT_FAILURE)
+
+        if chat not in SUPPORTED_CHATS:
+            sys.stderr.write("Unsupported chat type '%s'.\n" % chat)
+            sys.exit(EXIT_FAILURE)
+
+        if (chat == "campfire" and not self.config["campfire_host"]) or \
+            (chat == "hipchat" and not self.config["hipchat_host"]):
+            sys.stderr.write("No API host specified.\n")
+            sys.exit(EXIT_FAILURE)
+
+        if not self.config["access_token"]:
+            if chat == "campfire":
+                self.config["access_token"] = self.config["campfire_token"]
+            elif chat == "hipchat":
+                self.config["access_token"] = self.config["hipchat_token"]
+
+
+    def clog(self):
+        """Read data from stdin and write it to the chat rooms."""
+        self.verbose("Ready to clog...")
 
         if not self.message:
             # Implicit limitation: we read all content in at once.  This is
@@ -78,33 +113,25 @@ class Clogger(object):
             # let's just barf and abort.  GIGO.
             self.message = sys.stdin.readlines()
 
-        msglen = len(self.message)
-        if msglen > 1:
-            self.makeCampfireRequest(messageType, self.getUserAtHost() + " says:")
-            self.verbose("Setting type to 'PasteMessage' for message length %d..." % msglen, 2)
-            messageType = "PasteMessage"
-            self.message = "".join(self.message)
+        chat = self.config["chat_type"]
+
+        clog_func = None
+        if chat == "campfire":
+            clog_func = self.clogCampfire
+        elif chat == "hipchat":
+            clog_func = self.clogHipchat
         else:
-            self.message = self.getUserAtHost() + ": " + self.message[0].rstrip()
-
-        self.makeCampfireRequest(messageType, self.message)
-
-
-    def getUserAtHost(self):
-        """Create a string representing the username of the real-UID of
-           this process @ the hostname component of the FQDN."""
-
-        uid = os.getuid()
-        try:
-            uinfo = pwd.getpwuid(uid)
-        except KeyError, e:
-            sys.stderr.write("Unable to get struct passwd for uid %d: %s\n" % (uid, e.strerror))
+            sys.stderr.write("Unsupported chat type -- how did we ever get here?\n")
             sys.exit(EXIT_FAILURE)
 
-        return "%s@%s" % (uinfo.pw_name, socket.gethostname().split(".")[0])
+        if len(self.message) > 1:
+            clog_func(self.getUserAtHost() + " says:")
+            clog_func("".join(self.message), "PasteMessage")
+        else:
+            clog_func(self.getUserAtHost() + ": " + self.message[0].rstrip())
 
 
-    def makeCampfireRequest(self, messageType, message):
+    def clogCampfire(self, message, messageType="TextMessage"):
         """Issue the request to send the data to Campfire."""
 
         self.verbose("Making '%s' request to Campfire..." % messageType, 2)
@@ -117,6 +144,98 @@ class Clogger(object):
             url = "/room/" + room + "/speak.json"
             if not self.postData(url, data):
                 sys.stderr.write("Unable to post message to room %s.\n" % room)
+
+
+    def clogHipchat(self, message, messageType="Ignored"):
+        self.verbose("Clogging Hipchat...", 2)
+
+        data = {
+                 'auth_token'     : self.config["access_token"],
+                 'from'           : NAME,
+                 'message_format' : "text",
+                 'message'        : message
+               }
+
+        for room in self.config["rooms"]:
+            self.verbose("Sending message to room %s..." % room, 3)
+            data['room_id'] = room
+            if not self.postData("/v1/rooms/message", data):
+                sys.stderr.write("Unable to post message to room %s.\n" % room)
+
+
+    def fclog(self):
+        """Continously read data from stdin and write it one line at a time to
+           the Campfire rooms."""
+        self.verbose("Ready to clog continously...")
+        while 1:
+            self.message = sys.stdin.readline()
+            if self.message == '':
+                break
+            self.clog()
+
+
+    def getAccessToken(self):
+        """Try to get the access token:
+           - if on OS X, query the keychain; if present, use that
+           - prompt user for token
+           - if on OS X, store token in keychain
+        """
+
+        get_token_from_keychain = [ "security", "find-generic-password", "-s", "clogger", "-w" ]
+        write_token_to_keychain = [ "security", "add-generic-password", "-a", getpass.getuser(), "-s", "clogger", "-w" ]
+
+        devnull = None
+        try:
+            devnull = open(os.devnull, "w")
+        except Exception, e:
+            sys.stderr.write("Unable to open %s: %s\n" % (os.devnull, e.strerror))
+            sys.exit(EXIT_FAILURE)
+
+        if OSX:
+            self.verbose("Trying to get the access token from the keychain...", 2)
+            try:
+                self.config["access_token"] = subprocess.check_output(get_token_from_keychain, stderr=devnull).strip()
+                return
+            except subprocess.CalledProcessError, e:
+                pass
+
+        self.verbose("No access token available, asking the user...", 2)
+        self.config["access_token"] = getpass.getpass("%s API Access Token: " % self.config["chat_type"].capitalize())
+
+        if OSX:
+            write_token_to_keychain.append(self.config["access_token"])
+            self.verbose("Storing access token in the keychain...", 2)
+            try:
+                subprocess.check_output(write_token_to_keychain)
+            except subprocess.CalledProcessError, e:
+                sys.stderr.write("Unable to store access token in your keychain.\n")
+                sys.stderr.write("%s\n" % e.cmd)
+
+
+    def getUserAtHost(self):
+        """Create a string representing the username of the real-UID of
+           this process @ the hostname component of the FQDN.  If the
+           SUDO_UID environment variable is set, we try to get that user's
+           information as well."""
+
+        prefix = ""
+        uid = os.getuid()
+        try:
+            user = pwd.getpwuid(uid).pw_name
+        except KeyError, e:
+            sys.stderr.write("Unable to get struct passwd for uid %d: %s\n" % (uid, e.strerror))
+            sys.exit(EXIT_FAILURE)
+
+        try:
+            sudo_uid = os.getenv("SUDO_UID")
+            prefix = pwd.getpwuid(int(sudo_uid)).pw_name + " as "
+        except (KeyError, ValueError), e:
+            prefix = "SUDO_UID='%s' " % sudo_uid
+        except TypeError, e:
+            # sudo_uid was None, ie environment variable not set
+            pass
+
+        return "%s%s@%s" % (prefix, user, socket.gethostname().split(".")[0])
 
 
     def makeProxySocket(self):
@@ -176,7 +295,7 @@ class Clogger(object):
                             self.config[key] = val
                             # Do not leak an actual password onto the
                             # terminal or into logs.
-                            if key == "access_token":
+                            if key in [ "access_token", "proxy_pass" ]:
                                 val = "XXXXXX"
                             self.verbose("Setting %s to %s..." % (key, val), 2)
                         else:
@@ -184,8 +303,15 @@ class Clogger(object):
             f.close()
 
         except IOError, e:
-            sys.stderr.write("Unable to read '%s': %s\n" % (cfg, e.strerror))
-            sys.exit(EXIT_FAILURE)
+            # If the default file exists, then we had an unexpected IO
+            # error, so report.
+            # If the default file does not exist, allow the user to
+            # continue with default values without any errors.
+            # If a non-default file can't be read for any reason, that's
+            # an error.
+            if os.path.exists(cfg) or cfg != DEFAULTS["config"]:
+                sys.stderr.write("Unable to read '%s': %s\n" % (cfg, e.strerror))
+                sys.exit(EXIT_FAILURE)
 
 
     def parseOptions(self, inargs):
@@ -200,7 +326,7 @@ class Clogger(object):
         """
 
         try:
-            opts, args = getopt.getopt(inargs, "DVc:hfr:v")
+            opts, args = getopt.getopt(inargs, "DVc:fhr:t:v")
         except getopt.GetoptError:
             raise self.Usage(EXIT_FAILURE)
 
@@ -216,11 +342,18 @@ class Clogger(object):
             if option in ("-h"):
                 raise self.Usage(EXIT_SUCCESS)
             if option in ("-f"):
-                self.config["force"] = True
+                self.config["follow"] = True
             if option in ("-r"):
                 self.config["rooms"].append(argument)
+            if option in ("-t"):
+                self.config["chat_type"] = argument
             if option in ("-v"):
                 self.verbosity += 1
+
+        if self.config["follow"] and args:
+            sys.stderr.write("You can't specify a message when using '-f'.\n")
+            sys.exit(EXIT_FAILURE)
+            # NOTREACHED
 
         if args:
             self.message = [ " ".join(args) ]
@@ -232,22 +365,33 @@ class Clogger(object):
 
     def postData(self, uri, data):
         """Post the given data to the URL."""
+        self.verbose("Posting data to '%s'..." % uri, 3)
+        self.verbose(data, 4)
 
-        if data:
-            self.verbose("Posting data...", 4)
-            self.verbose(data, 5)
-            data = json.dumps(data).encode()
+        api_host = self.config["campfire_host"]
 
-        auth = base64.encodestring('%s:' % self.config["access_token"]).replace('\n', '')
-        headers = { 'Content-Type'  : 'application/json',
+        chat = self.config["chat_type"]
+
+        if chat == "campfire":
+            auth = base64.encodestring('%s:' % self.config["access_token"]).replace('\n', '')
+            headers = { 'Content-Type'  : 'application/json',
                     'User-Agent'    : AGENT_STRING,
                     'Authorization' : 'Basic %s' % auth }
+            data = json.dumps(data).encode()
 
-        fullurl = "https://" + self.config["campfire_host"] + uri
+        if chat == "hipchat":
+            api_host = self.config["hipchat_host"]
+            data = urllib.urlencode(data)
+            headers = { 'Content-Type'  : 'application/x-www-form-urlencoded',
+                        'Content-Length' : len(data),
+                        'User-Agent'    : AGENT_STRING }
+
+        fullurl = "https://" + api_host + uri
+
         if not self.config["debug"]:
             proxy_socket = None
 
-            conn = httplib.HTTPSConnection(self.config["campfire_host"])
+            conn = httplib.HTTPSConnection(api_host)
             if self.verbosity > 2:
                 conn.set_debuglevel(1)
             if self.config["proxy_url"]:
@@ -302,7 +446,15 @@ if __name__ == "__main__":
             # NOTREACHED
 
         clogger.parseConfigFile()
-        clogger.clog()
+        clogger.checkConfig()
+
+        if not clogger.config["access_token"]:
+            clogger.getAccessToken()
+
+        if clogger.config["follow"]:
+            clogger.fclog()
+        else:
+            clogger.clog()
 
     except KeyboardInterrupt:
         # catch ^C, so we don't get a "confusing" python trace

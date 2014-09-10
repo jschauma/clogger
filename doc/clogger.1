@@ -1,34 +1,39 @@
-.Dd November 14, 2013
+.Dd September 09, 2014
 .Dt CLOGGER 1
 .Os
 .Sh NAME
 .Nm clogger
-.Nd log input to campfire
+.Nd log input to a chatroom
 .Sh SYNOPSIS
 .Nm
-.Op Fl DVhv
+.Op Fl DVfhv
 .Op Fl c Ar file
 .Fl r Ar room
 .Op Ar message ...
 .Sh DESCRIPTION
 .Nm
-writes input to the specified Campfire room(s).
+writes input to the specified chat room(s).
 .Sh OPTIONS
 .Nm
 supports the following options:
 .Bl -tag -width message_
 .It Fl D
 Run in debug mode.
-No messages will actually be sent to Campfire.
+No messages will actually be sent to the chat service.
 .It Fl V
 Print version information and exit.
 .It Fl c Ar file
 Read configuration from this file.
+.It Fl f
+Continously read from stdin and post each line.
 .It Fl h
 Print a short usage statement and exit.
 .It Fl r Ar room
 Write the given message to this room.
 Can be specified multiple times.
+.It Fl t Ar type
+Clog the chat system of the given type.
+Can be one of 'campfire' or 'hipchat'.
 .It Fl v
 Be verbose.
 Can be specified multiple times.
@@ -38,12 +43,34 @@ from stdin.
 .El
 .Sh DETAILS
 .Nm
-writes the given message to the specified Campfire room(s).
+writes the given message to the specified chat room(s).
+(Currently supported chat services are Campfire and HipChat.)
 It prefixes any messages with the username of the invoking user as well as
 the (short) hostname on which it is running.
+If
+.Nm
+was invoked via
+.Xr sudo 8 ,
+then it also prefixes the string with the username derived from the
+SUDO_UID environment variable.
+.Pp
 If the input consists of multiple lines, then
 .Nm
-delivers the input as a "PasteMessage" to the Campfire API.
+delivers the input as a pasted message.
+.Pp
+If the
+.Fl f
+flag was specified, then
+.Nm
+will continously read one line at a time from stdin and post it to the
+given room(s).
+This is conceptually similar to the use of the same flag for the
+.Xr tail 1
+command.
+Using this option may cause
+.Nm
+to run into API limitations if there is a lot of (possibly continous)
+input.
 .Sh CONFIGURATION
 By default,
 .Nm
@@ -51,10 +78,17 @@ reads its configuration from the file
 .Ar /etc/clogger.conf .
 In this file, you can specify the following keyword=value pairs:
 .Bl -tag -width campfire_host_
-.It access_token
-The API access token used to authenticate to Campfire.
+.It campfire_token
+The API access token used to authenticate to Campfire, if any.
 .It campfire_host
-The hostname for Campfire API access.
+The hostname for Campfire API access, if any.
+.It chat_type
+The type of chat service to use.
+Can be one of 'campfire' or 'hipchat'.
+.It hipchat_host
+The hostname for HipChat API access, if any.
+.It hipchat_token
+The API access token used to authenticate to HipChat, if any.
 .It proxy_url
 The URL of the HTTP proxy to use, if any.
 .It proxy_user
@@ -73,11 +107,19 @@ To paste the contents of the file 'config.xml' to the rooms 1234 and
 .Bd -literal -offset indent
 clogger -r 1234 -r 56789 <config.xml
 .Ed
+.Pp
+To periodically update the room 1234 with the latest ssh failures:
+.Bd -literal -offset indent
+sudo tail -f /var/log/auth.log |                   \\
+        egrep "(Invalid user|Failed publickey)" |  \\
+        clogger -f -r 1234
+.Ed
 .Sh EXIT STATUS
 .Ex -std
 .Sh SEE ALSO
 .Xr logger 1 ,
 .Xr https://github.com/37signals/campfire-api
+.Xr https://www.hipchat.com/docs/api
 .Sh HISTORY
 .Nm
 was originally written by

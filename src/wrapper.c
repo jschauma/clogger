@@ -16,7 +16,7 @@
 
 int
 main(int argc, char **argv) {
-	execve(SCRIPT, argv, 0);
+	execv(SCRIPT, argv);
 	fprintf(stderr, "Unable to exec %s: %s\n", SCRIPT, strerror(errno));
 	exit(1);
 }

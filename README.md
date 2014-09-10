@@ -2,7 +2,7 @@ Clogger - A Campfire Logger
 ===========================
 clogger(1) implements a simple logging/messaging interface analogous to the
 common logger(1) command.  However, instead of logging messages to
-syslog(3), clogger(1) will write the message to Campfire.
+syslog(3), clogger(1) will write the message to Campfire or HipChat.
 
 Who wrote this tool?
 --------------------
@@ -15,8 +15,15 @@ You want to create a configuration file containing at least the following
 lines:
 
 ```
-access_token = 1a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f7
+campfire_token = 1a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f7
 campfire_host = yoursite.campfirenow.com
+```
+
+or, for HipChat:
+
+```
+hipchat_token = 1a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f71a2b3c4d5e6f7
+hipchat_host = api.hipchat.com
 ```
 
 If you are using an HTTP proxy to access the internet, you can also add
