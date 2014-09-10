@@ -24,7 +24,7 @@ import sys
 import urllib
 
 NAME = "clogger"
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 AGENT_STRING = NAME + " " + VERSION
 
 DEFAULTS = {
@@ -248,7 +248,10 @@ class Clogger(object):
         proxy_port = int(proxy_port)
         self.verbose("Creating a Proxy socket to %s:%d..." % (proxy_host, proxy_port), 3)
 
-        proxy_connect = "CONNECT %s:443 HTTP/1.0\r\n" % self.config["campfire_host"]
+        api_host = self.config["campfire_host"]
+        if self.config["chat_type"] == "hipchat":
+            api_host = self.config["hipchat_host"]
+        proxy_connect = "CONNECT %s:443 HTTP/1.0\r\n" % api_host
         proxy_auth_header = ""
 
         if self.config["proxy_user"] and self.config["proxy_pass"]:
