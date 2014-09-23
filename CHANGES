@@ -1,5 +1,5 @@
 * Tue Sep 23 2014 - jschauma@twitter.com
-- 0.7:
+- 0.6.3:
 -  support both HipChat and Campfire credentials in OS X keychain
 -  note in manual page that a message on the command-line cannot begin
    with a '-'
