@@ -1,4 +1,4 @@
-.Dd September 09, 2014
+.Dd September 23, 2014
 .Dt CLOGGER 1
 .Os
 .Sh NAME
@@ -97,6 +97,20 @@ The username to authenticate to the HTTP proxy, if any.
 .It proxy_pass
 The password to authenticate to the HTTP proxy, if any.
 .El
+.Sh OS X CREDENTIALS
+When running on OS X,
+.Nm
+will, if no access tokens were found in the configuration file, look in
+the keychain for an entry matching either
+.Nm
+or its name suffixed with the chat type (e.g. 'clogger-hipchat').
+If none are found,
+.Nm
+will prompt the user for the API token and subsequently store it in the
+keychain.
+.Pp
+This allows the user to store multiple credentials for different service
+without the need for an insecure text file.
 .Sh EXAMPLES
 To say "Good news, everybody!" to room 1234:
 .Bd -literal -offset indent
@@ -115,8 +129,22 @@ sudo tail -f /var/log/auth.log |                   \\
         egrep "(Invalid user|Failed publickey)" |  \\
         clogger -f -r 1234
 .Ed
+.Pp
+To clog the HipChat room "Cool Kids":
+.Bd -literal -offset indent
+banner "Whazzzzup?" | clogger -t hipchat -r "Cool Kids"
+.Ed
 .Sh EXIT STATUS
 .Ex -std
+.Sh BUGS
+Due to the way command-line options are processed, you cannot specify a
+message that begins with a '-' as the last argument.
+Instead, you need to have
+.Nm
+read it from stdin.
+(This is the preferred invocation anyway, since that way you do not need
+to worry about the shell interpreting any characters in a special way,
+which may have unexpected results.)
 .Sh SEE ALSO
 .Xr logger 1 ,
 .Xr https://github.com/37signals/campfire-api

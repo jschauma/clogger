@@ -75,6 +75,16 @@ CONFIGURATION
 
      proxy_pass	     The password to authenticate to the HTTP proxy, if any.
 
+OS X CREDENTIALS
+     When running on OS X, clogger will, if no access tokens were found in the
+     configuration file, look in the keychain for an entry matching either
+     clogger or its name suffixed with the chat type (e.g. 'clogger-hipchat').
+     If none are found, clogger will prompt the user for the API token and
+     subsequently store it in the keychain.
+
+     This allows the user to store multiple credentials for different service
+     without the need for an insecure text file.
+
 EXAMPLES
      To say "Good news, everybody!" to room 1234:
 
@@ -91,8 +101,20 @@ EXAMPLES
 		   egrep "(Invalid user|Failed publickey)" |  \
 		   clogger -f -r 1234
 
+     To clog the HipChat room "Cool Kids":
+
+	   banner "Whazzzzup?" | clogger -t hipchat -r "Cool Kids"
+
 EXIT STATUS
      The clogger utility exits 0 on success, and >0 if an error occurs.
+
+BUGS
+     Due to the way command-line options are processed, you cannot specify a
+     message that begins with a '-' as the last argument.  Instead, you need
+     to have clogger read it from stdin.  (This is the preferred invocation
+     anyway, since that way you do not need to worry about the shell inter-
+     preting any characters in a special way, which may have unexpected
+     results.)
 
 SEE ALSO
      logger(1), https://github.com/37signals/campfire-api
@@ -102,4 +124,4 @@ HISTORY
      clogger was originally written by Jan Schaumann <jschauma@twitter.com> in
      November 2013.
 
-NetBSD 5.0		      September 09, 2014		    NetBSD 5.0
+NetBSD 5.0		      September 23, 2014		    NetBSD 5.0

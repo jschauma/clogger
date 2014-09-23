@@ -182,29 +182,36 @@ class Clogger(object):
            - if on OS X, store token in keychain
         """
 
-        get_token_from_keychain = [ "security", "find-generic-password", "-s", "clogger", "-w" ]
-        write_token_to_keychain = [ "security", "add-generic-password", "-a", getpass.getuser(), "-s", "clogger", "-w" ]
-
-        devnull = None
-        try:
-            devnull = open(os.devnull, "w")
-        except Exception, e:
-            sys.stderr.write("Unable to open %s: %s\n" % (os.devnull, e.strerror))
-            sys.exit(EXIT_FAILURE)
+        servicename = NAME + "-" + self.config["chat_type"]
 
         if OSX:
-            self.verbose("Trying to get the access token from the keychain...", 2)
+            devnull = None
             try:
-                self.config["access_token"] = subprocess.check_output(get_token_from_keychain, stderr=devnull).strip()
-                return
-            except subprocess.CalledProcessError, e:
-                pass
+                devnull = open(os.devnull, "w")
+            except Exception, e:
+                sys.stderr.write("Unable to open %s: %s\n" % (os.devnull, e.strerror))
+                sys.exit(EXIT_FAILURE)
+
+            self.verbose("Trying to get the access token from the keychain...", 2)
+
+            for service in [ NAME, servicename] :
+                self.verbose("Looking for %s password..." % service, 3)
+                get_token_from_keychain = [ "security", "find-generic-password", "-s", service, "-w" ]
+
+                try:
+                    self.config["access_token"] = subprocess.check_output(get_token_from_keychain, stderr=devnull).strip()
+                    return
+                except subprocess.CalledProcessError, e:
+                    pass
 
         self.verbose("No access token available, asking the user...", 2)
         self.config["access_token"] = getpass.getpass("%s API Access Token: " % self.config["chat_type"].capitalize())
 
         if OSX:
-            write_token_to_keychain.append(self.config["access_token"])
+            write_token_to_keychain = [ "security", "add-generic-password",
+                                        "-a", getpass.getuser(),
+                                        "-s", servicename,
+                                        "-w", self.config["access_token"] ]
             self.verbose("Storing access token in the keychain...", 2)
             try:
                 subprocess.check_output(write_token_to_keychain)
