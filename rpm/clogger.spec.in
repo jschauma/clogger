@@ -1,6 +1,6 @@
 %define name		clogger
 %define release		1
-%define version 	0.6.3
+%define version 	VERSION
 %define mybuilddir	${HOME}/redhat/BUILD/%{name}-%{version}-root
 
 Requires:		python27

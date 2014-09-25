@@ -1,3 +1,7 @@
+* Wed Sep 24 2014 - jschauma@twitter.com
+- 0.6.4:
+-  use HipChat's API v2
+
 * Tue Sep 23 2014 - jschauma@twitter.com
 - 0.6.3:
 -  support both HipChat and Campfire credentials in OS X keychain

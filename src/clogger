@@ -2,7 +2,7 @@
 #
 # clogger writes data from stdin to the specified chat rooms
 #
-# Copyright (c) 2013, Twitter, Inc. All rights reserved.
+# Copyright (c) 2013,2014 Twitter, Inc. All rights reserved.
 #
 # Originally written by Jan Schaumann <jschauma@twitter.com> in November
 # 2013.
@@ -24,7 +24,7 @@ import sys
 import urllib
 
 NAME = "clogger"
-VERSION = "0.6.3"
+VERSION = "0.6.4"
 AGENT_STRING = NAME + " " + VERSION
 
 DEFAULTS = {
@@ -44,6 +44,10 @@ DEFAULTS = {
 }
 
 SUPPORTED_CHATS = [ "campfire", "hipchat" ]
+
+# Yes, technically all 2xx are "success", but we only handle a small
+# subset, so list them here explicitly.
+HTTP_SUCCESS_CODES = [ 200, 201, 204 ]
 
 EXIT_FAILURE = 1
 EXIT_SUCCESS = 0
@@ -151,7 +155,6 @@ class Clogger(object):
         self.verbose("Clogging Hipchat...", 2)
 
         data = {
-                 'auth_token'     : self.config["access_token"],
                  'from'           : NAME,
                  'message_format' : "text",
                  'message'        : message
@@ -159,8 +162,7 @@ class Clogger(object):
 
         for room in self.config["rooms"]:
             self.verbose("Sending message to room %s..." % room, 3)
-            data['room_id'] = room
-            if not self.postData("/v1/rooms/message", data):
+            if not self.postData("/v2/room/%s/notification" % room, data):
                 sys.stderr.write("Unable to post message to room %s.\n" % room)
 
 
@@ -381,22 +383,24 @@ class Clogger(object):
 
         api_host = self.config["campfire_host"]
 
+        headers = { 'Content-Type'   : 'application/json',
+                    'User-Agent'     : AGENT_STRING }
+
         chat = self.config["chat_type"]
 
         if chat == "campfire":
             auth = base64.encodestring('%s:' % self.config["access_token"]).replace('\n', '')
-            headers = { 'Content-Type'  : 'application/json',
-                    'User-Agent'    : AGENT_STRING,
-                    'Authorization' : 'Basic %s' % auth }
-            data = json.dumps(data).encode()
+            headers['Authorization'] = 'Basic %s' % auth
 
-        if chat == "hipchat":
+        elif chat == "hipchat":
             api_host = self.config["hipchat_host"]
-            data = urllib.urlencode(data)
-            headers = { 'Content-Type'  : 'application/x-www-form-urlencoded',
-                        'Content-Length' : len(data),
-                        'User-Agent'    : AGENT_STRING }
+            headers['Authorization'] = 'Bearer %s' % self.config["access_token"]
+        else:
+            sys.stderr.write("Invalid chat type (%s) - how did we ever get here?\n" % chat)
+            sys.exit(EXIT_FAILURE)
+            # NOTREACHED
 
+        data = json.dumps(data).encode()
         fullurl = "https://" + api_host + uri
 
         if not self.config["debug"]:
@@ -423,7 +427,7 @@ class Clogger(object):
 
             conn.close()
 
-            if res.status != 200 and res.status != 201:
+            if res.status not in HTTP_SUCCESS_CODES:
                 sys.stderr.write("Unable to post to %s\n" % fullurl)
                 sys.stderr.write("Got: %d %s\n" % (res.status, res.reason))
                 return False
